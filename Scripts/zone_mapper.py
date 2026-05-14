@@ -14,21 +14,21 @@ Usage (run from the repo root):
                                   --obs data/observations.csv \
                                   --out data/observations_zoned.csv
 
-Defaults expect:
-    spatial/mariposas_zones.geojson   — your exported zone file
-    observations.csv                  — iNaturalist export CSV (in same folder)
-    observations_zoned.csv            — output (written to same folder as --obs)
+    # If your GeoJSON uses a property name not auto-detected, specify it:
+    python scripts/zone_mapper.py --zone-property zone
+
+Auto-detected property names (checked in order):
+    zone_id, Zone_ID, zone, Zone, name, Name, label, id
 
 Getting the iNaturalist CSV:
-    Project page → Export Observations → keep default columns → download.
-    The file needs latitude and longitude columns, which are included by default.
+    Project page -> Export Observations -> keep default columns -> download.
+    The file needs latitude and longitude columns (included by default).
 
 Notes on "outside all zones":
-    Historical observations (before zones were drawn) are often logged at the
-    site entrance or general address rather than within a specific planting area.
-    This is expected — future observations tagged with zone-A1 etc. will be more
-    precise. Observations with obscured coordinates (threatened species or private
-    geoprivacy) may also fall outside zones.
+    Historical observations are often logged at the site entrance or general
+    address rather than within a specific planting area. Observations with
+    obscured coordinates (threatened species / private geoprivacy) may also
+    fall outside zones. Both are expected for pre-zoning records.
 """
 
 import json
@@ -39,11 +39,10 @@ import pandas as pd
 
 
 # ---------------------------------------------------------------------------
-# Geometry helpers — no external dependencies
+# Geometry helpers
 # ---------------------------------------------------------------------------
 
 def _ring_area(ring):
-    """Shoelace formula for coordinate-space polygon area."""
     area = 0.0
     n = len(ring)
     j = n - 1
@@ -54,18 +53,16 @@ def _ring_area(ring):
 
 
 def _feature_area(feature):
-    """Approximate area for sorting (smallest zones checked first)."""
     g = feature.get("geometry") or {}
     t = g.get("type")
     if t == "Polygon":
         return _ring_area(g["coordinates"][0])
     if t == "MultiPolygon":
         return sum(_ring_area(p[0]) for p in g["coordinates"])
-    return float("inf")  # LineStrings etc. sort last and are skipped anyway
+    return float("inf")
 
 
 def _pip(lon, lat, ring):
-    """Ray-casting point-in-polygon for a single ring."""
     inside = False
     n = len(ring)
     j = n - 1
@@ -93,13 +90,21 @@ def _point_in_feature(lon, lat, geometry):
 # Zone loading
 # ---------------------------------------------------------------------------
 
-_ZONE_ID_KEYS = ["zone_id", "Zone_id", "Zone_ID", "ZONE_ID",
-                 "name", "Name", "NAME", "label", "id"]
+_ZONE_ID_KEYS = [
+    "zone_id", "Zone_id", "Zone_ID", "ZONE_ID",
+    "zone", "Zone", "ZONE",
+    "name", "Name", "NAME",
+    "label", "Label",
+    "id",
+]
 
 
-def _get_zone_id(properties):
+def _get_zone_id(properties, override_key=None):
     if not properties:
         return None
+    if override_key:
+        val = properties.get(override_key)
+        return str(val).strip() if val is not None and str(val).strip() else None
     for key in _ZONE_ID_KEYS:
         val = properties.get(key)
         if val is not None and str(val).strip():
@@ -107,17 +112,20 @@ def _get_zone_id(properties):
     return None
 
 
-def load_zones(path):
-    """Return list of zone dicts sorted by area ascending (smallest first)."""
+def load_zones(path, override_key=None):
+    """Return (zones list sorted by area, set of all property keys seen)."""
     with open(path, encoding="utf-8") as f:
         gj = json.load(f)
     features = gj.get("features", [gj])
     zones = []
+    all_props = set()
     for feat in features:
         geom = feat.get("geometry") or {}
+        props = feat.get("properties") or {}
+        all_props.update(props.keys())
         if geom.get("type") not in ("Polygon", "MultiPolygon"):
             continue
-        zone_id = _get_zone_id(feat.get("properties") or {})
+        zone_id = _get_zone_id(props, override_key)
         if not zone_id:
             continue
         zones.append({
@@ -126,7 +134,7 @@ def load_zones(path):
             "area": _feature_area(feat),
         })
     zones.sort(key=lambda z: z["area"])
-    return zones
+    return zones, all_props
 
 
 # ---------------------------------------------------------------------------
@@ -134,7 +142,6 @@ def load_zones(path):
 # ---------------------------------------------------------------------------
 
 def assign_zone(lon, lat, zones):
-    """Return the zone_id of the smallest polygon that contains the point."""
     for zone in zones:
         if _point_in_feature(lon, lat, zone["geometry"]):
             return zone["id"]
@@ -175,18 +182,32 @@ def main():
         default="observations_zoned.csv",
         help="Output CSV filename (default: observations_zoned.csv)",
     )
+    parser.add_argument(
+        "--zone-property",
+        default=None,
+        metavar="PROPERTY",
+        help="GeoJSON property name to use as zone ID (auto-detected if omitted)",
+    )
     args = parser.parse_args()
 
     # Load zones
     print(f"Loading zones from: {args.zones}")
     try:
-        zones = load_zones(args.zones)
+        zones, all_props = load_zones(args.zones, args.zone_property)
     except FileNotFoundError:
         print(f"  ERROR: file not found — {args.zones}")
         sys.exit(1)
+
     if not zones:
         print("  ERROR: no named polygon features found in the GeoJSON.")
+        if all_props:
+            print(f"  Properties found in file: {sorted(all_props)}")
+            print(f"  Re-run with: --zone-property <name>")
+            print(f"  Example:     --zone-property {sorted(all_props)[0]}")
+        else:
+            print("  The file may contain no polygon features, or features have no properties.")
         sys.exit(1)
+
     print(f"  {len(zones)} zone polygon(s) loaded:")
     for z in zones:
         print(f"    {z['id']}")
@@ -200,7 +221,7 @@ def main():
         sys.exit(1)
     print(f"  {len(df)} observations loaded")
 
-    # Assign zones row by row
+    # Assign zones
     print("\nAssigning zones...")
     assigned = []
     for _, row in df.iterrows():
@@ -230,10 +251,9 @@ def main():
     print(f"\nBy zone:")
     counts = df["assigned_zone"].value_counts()
     for zone, count in counts.items():
-        marker = "" if zone in ("outside", "no_coordinates") else "  ← "
+        marker = "" if zone in ("outside", "no_coordinates") else "  <--"
         print(f"  {zone:<35} {count:>5}  ({count/n_total*100:.1f}%){marker}")
 
-    # Write output
     df.to_csv(args.out, index=False)
     print(f"\nSaved: {args.out}")
 
