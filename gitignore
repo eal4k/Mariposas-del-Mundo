@@ -1,0 +1,87 @@
+# ---------------------------------------------------------------
+# Operating system files
+# ---------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+desktop.ini
+
+# ---------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments — create one locally but don't commit it
+venv/
+.venv/
+env/
+.env/
+
+# Jupyter notebook checkpoints
+.ipynb_checkpoints/
+
+# ---------------------------------------------------------------
+# Photos and large media
+# Photos live in Google Photos / Google Drive, not in the repo.
+# Reference photo metadata (filenames, dates, descriptions) can
+# live in a CSV in /log/ if needed, but not the images themselves.
+# ---------------------------------------------------------------
+*.jpg
+*.jpeg
+*.JPG
+*.JPEG
+*.png
+*.PNG
+*.tif
+*.tiff
+*.mp4
+*.mov
+*.MOV
+
+# ---------------------------------------------------------------
+# Generated output files
+# These are produced by scripts and can be recreated at any time.
+# Commit the inputs (zones GeoJSON, planting log) not the outputs.
+# ---------------------------------------------------------------
+observations_zoned.csv
+*_zoned.csv
+
+# ---------------------------------------------------------------
+# Raw iNaturalist exports
+# These can be re-downloaded from the project page at any time.
+# Snapshot CSVs named with a date are kept (see exceptions below).
+# ---------------------------------------------------------------
+observations.csv
+
+# Keep dated snapshot exports so there is a record of what
+# iNaturalist looked like at a given point in time.
+# Files matching e.g. observations_2026-05-14.csv are tracked.
+!observations_[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].csv
+
+# ---------------------------------------------------------------
+# Editor and IDE settings
+# ---------------------------------------------------------------
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# ---------------------------------------------------------------
+# QGIS backup files (keep .qgz and .qgs project files, not backups)
+# ---------------------------------------------------------------
+*.qgz~
+*.qgs~
+*.qgd
+
+# ---------------------------------------------------------------
+# Temporary and working files
+# ---------------------------------------------------------------
+*.tmp
+*.bak
+*.swp
+*~
